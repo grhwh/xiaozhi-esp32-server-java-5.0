@@ -189,11 +189,11 @@ public class DialogueService{
                 eventPublisher.publishEvent(new SpeechRecognizedEvent(this, sessionId, sttResult.text(),
                         sttResult.hasEmotion() ? sttResult.emotion() : null));
 
-                // 音频保存
-                Instant userInstant = Instant.now();
-                Path userAudioPath = session.getAudioPath(MessageBO.SENDER_USER, userInstant);
-                session.setUserAudioPath(userAudioPath);
-                saveUserAudio(session, userAudioPath);
+                // 音频保存已禁用grh
+                // Instant userInstant = Instant.now();
+                // Path userAudioPath = session.getAudioPath(MessageBO.SENDER_USER, userInstant);
+                // session.setUserAudioPath(userAudioPath);
+                // saveUserAudio(session, userAudioPath);
 
                 handleText(session, sttResult);
 

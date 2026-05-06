@@ -68,12 +68,13 @@ public class OpusRecorder {
             aecService.feedReference(session.getSessionId(), opusFrame);
         }
 
-        if (opusFile == null && assistantMessageCreatedAt != null) {
-            openOpusFile();
-        }
-        if (opusFile != null) {
-            opusFile.writeAudioData(new OpusAudioData(opusFrame));
-        }
+        // 音频存储已禁用，不再写入文件grh
+        // if (opusFile == null && assistantMessageCreatedAt != null) {
+        //     openOpusFile();
+        // }
+        // if (opusFile != null) {
+        //     opusFile.writeAudioData(new OpusAudioData(opusFrame));
+        // }
     }
 
     public void onSendStop() {
