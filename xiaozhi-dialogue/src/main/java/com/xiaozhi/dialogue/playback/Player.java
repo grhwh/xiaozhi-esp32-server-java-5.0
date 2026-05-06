@@ -169,6 +169,15 @@ public abstract class Player {
     }
 
     /**
+     * 直接播放音频文件（用于知识库音频播放）
+     * 
+     * @param audioPath 音频文件路径字符串
+     */
+    public void playAudioFile(String audioPath) {
+        play(Path.of(audioPath));
+    }
+
+    /**
      * 检查播放器是否有内容正在播放或待播放。
      * 基类默认实现等同于isPlaying()，子类可覆盖以包含队列等状态判断。
      * 用于打断判断，比isPlaying()更全面。

@@ -106,3 +106,16 @@ sa-token:
   is-read-header: true
   token-prefix: Bearer
   jwt-secret-key: xiaozhi-esp32-server-java-jwt-secret-key
+
+# ============================================================
+# 知识库配置
+# ============================================================
+knowledge:
+  base:
+    enabled: true                          # 是否启用知识库功能
+    path: ./knowledge-base                 # 知识库根目录
+    chunk-size: 500                        # 文本分块大小（字符数）
+    similarity-threshold: 0.8              # 相似度阈值（0-1）
+    vector-store-path: ./data/knowledge-vector-store.json  # 向量存储文件路径
+    embedding-model-path: ./models/embedding-model.onnx    # ONNX Embedding 模型路径
+    vocab-path: ./models/vocab.txt                          # 词表文件路径

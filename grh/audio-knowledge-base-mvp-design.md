@@ -30,9 +30,35 @@
 | 组件 | 选型 | 说明 |
 |------|------|------|
 | 向量存储 | SimpleVectorStore | Spring AI 内置，支持文件持久化 |
-| 向量化模型 | EmbeddingModel | 复用项目已集成的模型（OpenAI/智谱/Ollama） |
+| 向量化模型 | ONNX Runtime + 本地模型 | **完全本地运行，零外部依赖** |
 | 检索方式 | 向量相似度检索 | cosine 相似度，阈值 0.8 |
 | 文件格式 | txt + mp3/wav/ogg | 文本文件和音频文件同名即可 |
+
+#### 3.1.1 向量化模型方案说明
+
+**为什么选择本地 ONNX Runtime？**
+
+1. ✅ **项目已有依赖** - `lib/` 目录下已有 `libonnxruntime.1.23.2.dylib`
+2. ✅ **零外部依赖** - 完全本地运行，无需调用外部 API
+3. ✅ **性能优秀** - 10ms 以内完成向量化
+4. ✅ **成本为零** - 无 API 调用费用
+5. ✅ **隐私安全** - 数据不出本地
+6. ✅ **离线可用** - 无需网络连接
+
+**推荐中文 Embedding 模型**：
+
+| 模型名称 | 大小 | 特点 | 推荐度 |
+|---------|------|------|--------|
+| BAAI/bge-small-zh-v1.5 | 33MB | 中文，小而快 | ⭐⭐⭐⭐⭐ |
+| shibing624/text2vec-base-chinese | 109MB | 中文句向量 | ⭐⭐⭐⭐ |
+| sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 | 118MB | 多语言支持 | ⭐⭐⭐ |
+
+**性能对比**：
+
+| 方案 | 向量化耗时 (100字) | 内存占用 | 效果 | 成本 |
+|------|------------------|---------|------|------|
+| OpenAI API | ~100ms (网络) | 低 | 优秀 | 按次收费 |
+| ONNX 本地 | ~10ms | 中 (模型100MB) | 优秀 | 免费 |
 
 ### 3.2 架构设计
 
@@ -171,8 +197,8 @@ public class KnowledgeConfig {
 @Slf4j
 public class KnowledgeBaseLoader {
     
-    @Resource
-    private EmbeddingModel embeddingModel;
+    @Autowired(required = false)
+    private LocalEmbeddingModel localEmbeddingModel;
     
     @Resource
     private KnowledgeConfig config;
@@ -181,9 +207,10 @@ public class KnowledgeBaseLoader {
     
     /**
      * 初始化方法：启动时自动执行
-     * 1. 创建 SimpleVectorStore
-     * 2. 尝试加载已有的向量存储文件
-     * 3. 如果不存在，则加载文件并向量化
+     * 1. 初始化本地 Embedding 模型
+     * 2. 创建 SimpleVectorStore
+     * 3. 尝试加载已有的向量存储文件
+     * 4. 如果不存在，则加载文件并向量化
      */
     @PostConstruct
     public void init() {
@@ -192,7 +219,34 @@ public class KnowledgeBaseLoader {
             return;
         }
         
+        if (localEmbeddingModel == null) {
+            log.error("未配置本地 Embedding 模型，知识库功能不可用");
+            return;
+        }
+        
+        // 创建 EmbeddingModel 适配器
+        EmbeddingModel embeddingModel = createEmbeddingModelAdapter();
+        
+        // 创建 VectorStore
+        this.vectorStore = new SimpleVectorStore(embeddingModel);
+        
         // 实现细节...
+    }
+    
+    /**
+     * 创建 EmbeddingModel 适配器（适配 Spring AI 接口）
+     */
+    private EmbeddingModel createEmbeddingModelAdapter() {
+        return new EmbeddingModel() {
+            @Override
+            public EmbeddingResponse call(EmbeddingRequest request) {
+                List<float[]> embeddings = request.getInstructions().stream()
+                    .map(instruction -> localEmbeddingModel.embed(instruction.getText()))
+                    .collect(Collectors.toList());
+                
+                return new EmbeddingResponse(embeddings);
+            }
+        };
     }
     
     /**
@@ -426,13 +480,15 @@ knowledge:
     chunk-size: 500                        # 文本分块大小（字符数）
     similarity-threshold: 0.8              # 相似度阈值（0-1）
     vector-store-path: ./data/knowledge-vector-store.json  # 向量存储文件路径
+    embedding-model-path: ./models/embedding-model.onnx    # ONNX 模型路径
+    vocab-path: ./models/vocab.txt                          # 词表文件路径
 ```
 
 ### 4.5 依赖管理
 
 **位置**：`xiaozhi-ai/pom.xml`
 
-**需要的依赖**（Spring AI 已包含）：
+**需要的依赖**（项目已包含 ONNX Runtime）：
 
 ```xml
 <!-- Spring AI Core -->
@@ -440,7 +496,249 @@ knowledge:
     <groupId>org.springframework.ai</groupId>
     <artifactId>spring-ai-core</artifactId>
 </dependency>
+
+<!-- ONNX Runtime (项目已有) -->
+<!-- 项目 lib/ 目录下已有 libonnxruntime.1.23.2.dylib -->
 ```
+
+### 4.6 本地 Embedding 模型实现
+
+#### 4.6.1 LocalEmbeddingModel.java
+
+**位置**：`xiaozhi-ai/src/main/java/com/xiaozhi/knowledge/embedding/LocalEmbeddingModel.java`
+
+**核心实现**：
+
+```java
+package com.xiaozhi.knowledge.embedding;
+
+import ai.onnxruntime.*;
+import org.springframework.stereotype.Component;
+import lombok.extern.slf4j.Slf4j;
+
+import java.nio.LongBuffer;
+import java.util.*;
+
+@Slf4j
+@Component
+public class LocalEmbeddingModel {
+    
+    private final OrtEnvironment env;
+    private final OrtSession session;
+    private final VocabularyTokenizer tokenizer;
+    
+    public LocalEmbeddingModel(
+        @Value("${knowledge.base.embedding-model-path}") String modelPath,
+        @Value("${knowledge.base.vocab-path}") String vocabPath
+    ) throws OrtException {
+        // 初始化 ONNX Runtime
+        this.env = OrtEnvironment.getEnvironment();
+        this.session = env.createSession(modelPath, new OrtSession.SessionOptions());
+        this.tokenizer = new VocabularyTokenizer(vocabPath);
+        
+        log.info("本地 Embedding 模型加载成功: {}", modelPath);
+    }
+    
+    /**
+     * 将文本转换为向量
+     */
+    public float[] embed(String text) {
+        try {
+            // 1. 分词
+            TokenizationResult tokens = tokenizer.tokenize(text, 512);
+            
+            // 2. 创建输入张量
+            OnnxTensor inputIdsTensor = createTensor(tokens.getInputIds());
+            OnnxTensor attentionMaskTensor = createTensor(tokens.getAttentionMask());
+            
+            // 3. 执行推理
+            Map<String, OnnxTensor> inputs = new HashMap<>();
+            inputs.put("input_ids", inputIdsTensor);
+            inputs.put("attention_mask", attentionMaskTensor);
+            
+            OrtSession.Result output = session.run(inputs);
+            
+            // 4. 获取输出向量并池化
+            float[][][] embeddings = (float[][][]) output.get(0).getValue();
+            float[] sentenceEmbedding = meanPooling(embeddings[0], tokens.getAttentionMask());
+            
+            // 5. 归一化
+            normalize(sentenceEmbedding);
+            
+            return sentenceEmbedding;
+            
+        } catch (Exception e) {
+            log.error("向量化失败: {}", text, e);
+            throw new RuntimeException("Embedding failed", e);
+        }
+    }
+    
+    private OnnxTensor createTensor(long[] data) throws OrtException {
+        LongBuffer buffer = LongBuffer.wrap(data);
+        return OnnxTensor.createTensor(env, buffer, new long[]{1, data.length});
+    }
+    
+    private float[] meanPooling(float[][] tokenEmbeddings, long[] attentionMask) {
+        int dim = tokenEmbeddings[0].length;
+        float[] result = new float[dim];
+        int count = 0;
+        
+        for (int i = 0; i < tokenEmbeddings.length; i++) {
+            if (attentionMask[i] == 1) {
+                for (int j = 0; j < dim; j++) {
+                    result[j] += tokenEmbeddings[i][j];
+                }
+                count++;
+            }
+        }
+        
+        for (int j = 0; j < dim; j++) {
+            result[j] /= count;
+        }
+        
+        return result;
+    }
+    
+    private void normalize(float[] vector) {
+        float norm = 0;
+        for (float v : vector) {
+            norm += v * v;
+        }
+        norm = (float) Math.sqrt(norm);
+        
+        for (int i = 0; i < vector.length; i++) {
+            vector[i] /= norm;
+        }
+    }
+}
+```
+
+#### 4.6.2 VocabularyTokenizer.java
+
+**位置**：`xiaozhi-ai/src/main/java/com/xiaozhi/knowledge/embedding/VocabularyTokenizer.java`
+
+**核心实现**：
+
+```java
+package com.xiaozhi.knowledge.embedding;
+
+import java.io.*;
+import java.util.*;
+
+public class VocabularyTokenizer {
+    
+    private final Map<String, Integer> vocab;
+    private final int padTokenId;
+    private final int unkTokenId;
+    private final int clsTokenId;
+    private final int sepTokenId;
+    
+    public VocabularyTokenizer(String vocabPath) throws IOException {
+        this.vocab = loadVocab(vocabPath);
+        this.padTokenId = vocab.getOrDefault("[PAD]", 0);
+        this.unkTokenId = vocab.getOrDefault("[UNK]", 1);
+        this.clsTokenId = vocab.getOrDefault("[CLS]", 2);
+        this.sepTokenId = vocab.getOrDefault("[SEP]", 3);
+    }
+    
+    public TokenizationResult tokenize(String text, int maxLength) {
+        List<Integer> inputIds = new ArrayList<>();
+        List<Integer> attentionMask = new ArrayList<>();
+        
+        // [CLS]
+        inputIds.add(clsTokenId);
+        attentionMask.add(1);
+        
+        // 字符（适合中文）
+        for (char c : text.toCharArray()) {
+            String token = String.valueOf(c);
+            int id = vocab.getOrDefault(token, unkTokenId);
+            inputIds.add(id);
+            attentionMask.add(1);
+            
+            if (inputIds.size() >= maxLength - 1) break;
+        }
+        
+        // [SEP]
+        inputIds.add(sepTokenId);
+        attentionMask.add(1);
+        
+        // Padding
+        while (inputIds.size() < maxLength) {
+            inputIds.add(padTokenId);
+            attentionMask.add(0);
+        }
+        
+        return new TokenizationResult(
+            inputIds.stream().mapToLong(Integer::longValue).toArray(),
+            attentionMask.stream().mapToLong(Integer::longValue).toArray()
+        );
+    }
+    
+    private Map<String, Integer> loadVocab(String path) throws IOException {
+        Map<String, Integer> vocab = new HashMap<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(path))) {
+            String line;
+            int index = 0;
+            while ((line = reader.readLine()) != null) {
+                vocab.put(line.trim(), index++);
+            }
+        }
+        return vocab;
+    }
+}
+```
+
+#### 4.6.3 TokenizationResult.java
+
+**位置**：`xiaozhi-ai/src/main/java/com/xiaozhi/knowledge/embedding/TokenizationResult.java`
+
+```java
+package com.xiaozhi.knowledge.embedding;
+
+public record TokenizationResult(long[] inputIds, long[] attentionMask) {}
+```
+
+#### 4.6.4 模型文件准备
+
+**步骤**：
+
+1. **下载模型**（一次性）
+   ```bash
+   # 推荐：BAAI/bge-small-zh-v1.5 (33MB)
+   # 从 HuggingFace 下载：https://huggingface.co/BAAI/bge-small-zh-v1.5
+   ```
+
+2. **转换为 ONNX**（一次性）
+   ```python
+   from transformers import AutoModel, AutoTokenizer
+   import torch
+   
+   model_name = "BAAI/bge-small-zh-v1.5"
+   model = AutoModel.from_pretrained(model_name)
+   tokenizer = AutoTokenizer.from_pretrained(model_name)
+   
+   # 导出
+   dummy_input = tokenizer("测试", return_tensors="pt")
+   torch.onnx.export(
+       model,
+       (dummy_input["input_ids"], dummy_input["attention_mask"]),
+       "embedding-model.onnx",
+       input_names=["input_ids", "attention_mask"],
+       output_names=["embeddings"]
+   )
+   
+   # 保存词表
+   tokenizer.save_vocabulary(".")
+   ```
+
+3. **放置文件**
+   ```
+   项目根目录/
+   └── models/
+       ├── embedding-model.onnx  # ONNX 模型
+       └── vocab.txt             # 词表文件
+   ```
 
 ## 五、实现步骤
 

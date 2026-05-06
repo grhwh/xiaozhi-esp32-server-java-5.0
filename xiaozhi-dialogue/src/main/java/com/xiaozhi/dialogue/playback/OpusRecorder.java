@@ -64,6 +64,7 @@ public class OpusRecorder {
     }
 
     public void onSendOpusFrame(byte[] opusFrame) {
+        // AEC 回声消除：实时处理，不受音频存储禁用影响
         if (aecService != null && aecService.isEnabled()) {
             aecService.feedReference(session.getSessionId(), opusFrame);
         }
