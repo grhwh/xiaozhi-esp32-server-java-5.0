@@ -17,8 +17,8 @@
 
 ```sql
 mysql -u root -p
-CREATE DATABASE xiaozhi CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'xiaozhi'@'localhost' IDENTIFIED BY '123456';
+CREATE DATABASE xiaozhi_5 CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'xiaozhi'@'localhost' IDENTIFIED BY 'rootroot';
 GRANT ALL PRIVILEGES ON xiaozhi.* TO 'xiaozhi'@'localhost';
 FLUSH PRIVILEGES;
 ```
