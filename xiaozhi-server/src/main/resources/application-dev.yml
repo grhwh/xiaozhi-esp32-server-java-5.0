@@ -15,3 +15,8 @@ email:
   smtp:
     username: xxx
     password: xxx
+
+xiaozhi:
+  server:
+    # domain 格式为 IP:端口，端口必须与实际 server.port 一致
+    domain: 192.168.1.100:8091

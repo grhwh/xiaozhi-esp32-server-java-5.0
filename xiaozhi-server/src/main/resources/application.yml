@@ -3,7 +3,7 @@
 # ============================================================
 
 server:
-  port: 8093
+  port: 8091
   tomcat:
     mbeanregistry:
       enabled: true  # 启用 Tomcat MBean，自动获得 tomcat_global_sent/received_bytes_total
