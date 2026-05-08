@@ -112,7 +112,7 @@ sa-token:
 # ============================================================
 knowledge:
   base:
-    enabled: true                          # 是否启用知识库功能
+    enabled: false                         # 是否启用知识库功能
     path: ./knowledge-base                 # 知识库根目录
     chunk-size: 500                        # 文本分块大小（字符数）
     similarity-threshold: 0.8              # 相似度阈值（0-1）
