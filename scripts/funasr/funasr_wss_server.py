@@ -127,6 +127,9 @@ parser.add_argument(
 
 args = parser.parse_args()
 
+# Java端已处理VAD，跳过Python端的VAD检测
+args.enable_vad = False
+
 websocket_users = set()
 SPEAKER_DB_PATH = os.path.join(os.path.dirname(__file__), "speaker_db.json")
 
