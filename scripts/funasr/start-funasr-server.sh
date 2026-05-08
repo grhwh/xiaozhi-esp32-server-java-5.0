@@ -1,5 +1,5 @@
 #!/bin/bash
-# FunASR WebSocket 服务启动脚本
+# FunASR WebSocket 服务启动脚本（已更新为官方 funasr_wss_server.py）
 # 用于本地部署 FunASR 实时语音识别服务
 
 set -e
@@ -14,10 +14,19 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# 设置 ModelScope 缓存目录（可选，默认 ~/.cache/modelscope）
+# 如需自定义，取消下面注释并修改路径
+export MODELSCOPE_CACHE="$PROJECT_ROOT/models/stt/FunASR/modelscope"
+
 # 配置参数（使用项目根目录的模型路径）
 FUNASR_MODEL_DIR="${1:-$PROJECT_ROOT/models/stt/FunASR}"
 FUNASR_PORT="${2:-10095}"
 HOST_IP="${3:-0.0.0.0}"
+# CPU 核心数：根据实际并发需求调整
+# - 单用户/测试环境: 1-2
+# - 小团队 (3-5人): 2-4
+# - 中等并发 (10+人): 4-8
+PYTHON_CORES="${4:-2}"  # 默认 2 核，适合低并发场景
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  FunASR WebSocket 服务启动脚本${NC}"
@@ -30,19 +39,6 @@ if [ ! -d "$FUNASR_MODEL_DIR" ]; then
     echo -e "${YELLOW}请确保已下载 FunASR 模型到该目录${NC}"
     exit 1
 fi
-
-# 检查必要的模型文件
-REQUIRED_FILES=("model.pt" "config.yaml" "am.mvn" "tokens.json" "seg_dict")
-for file in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "$FUNASR_MODEL_DIR/$file" ]; then
-        echo -e "${RED}错误: 缺少必要的模型文件: $file${NC}"
-        echo -e "${YELLOW}提示: 请确保已完整下载 FunASR 模型到 $FUNASR_MODEL_DIR${NC}"
-        exit 1
-    fi
-done
-
-echo -e "${GREEN}✓ 模型文件检查通过${NC}"
-echo ""
 
 # 检查 Python 版本
 if ! command -v python3 &> /dev/null; then
@@ -148,7 +144,7 @@ echo -e "${GREEN}✓ 端口 $FUNASR_PORT 可用${NC}"
 echo ""
 
 # 设置 Python 服务器脚本路径和日志路径
-SERVER_SCRIPT="$SCRIPT_DIR/funasr_websocket_server.py"
+SERVER_SCRIPT="$SCRIPT_DIR/funasr_wss_server.py"
 LOG_FILE="$PROJECT_ROOT/logs/funasr-server.log"
 
 # 检查 Python 服务器文件是否存在
@@ -176,7 +172,7 @@ echo -e "${YELLOW}按 Ctrl+C 停止服务${NC}"
 echo -e "${YELLOW}日志文件: $LOG_FILE${NC}"
 echo ""
 
-# 设置清理函数（不再需要清理临时文件）
+# 设置清理函数
 cleanup() {
     echo -e "\n${YELLOW}正在关闭服务器...${NC}"
     exit 0
@@ -185,4 +181,22 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # 启动服务器（同时输出到控制台和日志文件）
-python3 "$SERVER_SCRIPT" "$FUNASR_MODEL_DIR" "$FUNASR_PORT" "$HOST_IP" 2>&1 | tee -a "$LOG_FILE"
+# FunASR 官方版本使用 argparse 参数
+# 根据 CPU 核心数自动调整并发参数，禁用 SSL
+echo -e "${YELLOW}启动命令: python3 $SERVER_SCRIPT --host $HOST_IP --port $FUNASR_PORT --device cpu --ngpu 0 --ncpu $PYTHON_CORES --certfile ''${NC}"
+echo ""
+
+python3 "$SERVER_SCRIPT" \
+    --host "$HOST_IP" \
+    --port "$FUNASR_PORT" \
+    --device cpu \
+    --ngpu 0 \
+    --ncpu "$PYTHON_CORES" \
+    --worker_threads "$((PYTHON_CORES * 2))" \
+    --concurrent_vad "$PYTHON_CORES" \
+    --concurrent_asr_online "$PYTHON_CORES" \
+    --concurrent_asr_offline "$(( PYTHON_CORES / 2 > 0 ? PYTHON_CORES / 2 : 1 ))" \
+    --concurrent_punc 1 \
+    --concurrent_sv 1 \
+    --certfile "" \
+    2>&1 | tee -a "$LOG_FILE"
