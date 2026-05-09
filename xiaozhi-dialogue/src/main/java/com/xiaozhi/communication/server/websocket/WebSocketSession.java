@@ -15,6 +15,11 @@ public class WebSocketSession extends ChatSession {
      */
     protected org.springframework.web.socket.WebSocketSession session;
 
+    /**
+     * 用于同步发送消息的锁对象，防止并发发送导致UTF-8多字节字符损坏
+     */
+    private final Object sendLock = new Object();
+
     public WebSocketSession(String sessionId) {
         super(sessionId);
     }
@@ -56,10 +61,13 @@ public class WebSocketSession extends ChatSession {
 
     @Override
     public void sendTextMessage(String message) {
-        try {
-            session.sendMessage(new TextMessage(message));
-        } catch (IOException e) {
-            log.error("发送Text消息失败, message: {}", message, e);
+        // 使用同步锁确保消息按顺序发送，避免UTF-8多字节字符在并发发送时被截断或错乱
+        synchronized (sendLock) {
+            try {
+                session.sendMessage(new TextMessage(message));
+            } catch (IOException e) {
+                log.error("发送Text消息失败, message: {}", message, e);
+            }
         }
     }
 
