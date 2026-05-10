@@ -26,11 +26,22 @@ HOST_IP="${3:-0.0.0.0}"
 # - 单用户/测试环境: 1-2
 # - 小团队 (3-5人): 2-4
 # - 中等并发 (10+人): 4-8
-PYTHON_CORES="${4:-2}"  # 默认 2 核，适合低并发场景
+PYTHON_CORES="${4:-1}"  # 默认 1 核，最低资源配置
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  FunASR WebSocket 服务启动脚本${NC}"
+echo -e "${GREEN}  (极简配置 - 单机使用)${NC}"
 echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "${YELLOW}资源配置说明:${NC}"
+echo -e "  - CPU核心: ${GREEN}$PYTHON_CORES 核${NC}"
+echo -e "  - 工作线程: ${GREEN}1${NC}"
+echo -e "  - VAD模型: ${RED}已禁用${NC} (Java端处理)"
+echo -e "  - 在线ASR: ${RED}正常${NC}"
+echo -e "  - 离线ASR: ${GREEN}正常${GREEN} (仅离线识别)"
+echo -e "  - 标点模型: ${GREEN}正常${GREEN}"
+echo -e "  - 声纹识别: ${RED}已禁用${NC} (不需要)"
+echo -e "  - 预计内存: ${GREEN}~900MB-1.2GB${NC}"
 echo ""
 
 # 检查模型目录是否存在
@@ -182,7 +193,7 @@ trap cleanup EXIT INT TERM
 
 # 启动服务器（同时输出到控制台和日志文件）
 # FunASR 官方版本使用 argparse 参数
-# 根据 CPU 核心数自动调整并发参数，禁用 SSL
+# 根据 CPU 核心数自动调整并发参数，禁用 SSL，禁用 VAD 模型
 echo -e "${YELLOW}启动命令: python3 $SERVER_SCRIPT --host $HOST_IP --port $FUNASR_PORT --device cpu --ngpu 0 --ncpu $PYTHON_CORES --certfile ''${NC}"
 echo ""
 
@@ -192,11 +203,11 @@ python3 "$SERVER_SCRIPT" \
     --device cpu \
     --ngpu 0 \
     --ncpu "$PYTHON_CORES" \
-    --worker_threads "$((PYTHON_CORES * 2))" \
-    --concurrent_vad "$PYTHON_CORES" \
-    --concurrent_asr_online "$PYTHON_CORES" \
-    --concurrent_asr_offline "$(( PYTHON_CORES / 2 > 0 ? PYTHON_CORES / 2 : 1 ))" \
+    --worker_threads 1 \
+    --concurrent_vad 0 \
+    --concurrent_asr_online 1 \
+    --concurrent_asr_offline 1 \
     --concurrent_punc 1 \
-    --concurrent_sv 1 \
+    --concurrent_sv 0 \
     --certfile "" \
     2>&1 | tee -a "$LOG_FILE"
