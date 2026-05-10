@@ -39,10 +39,11 @@ echo -e "  - 工作线程: ${GREEN}1${NC} (低资源模式)"
 echo -e "  - VAD模型: ${RED}已禁用${NC} (Java端处理)"
 echo -e "  - 在线ASR: ${YELLOW}批量模式${NC} (说完后统一识别)"
 echo -e "  - 离线ASR: ${GREEN}极速识别${NC} (10秒音频仅需70ms)"
+echo -e "  - 标点符号: ${GREEN}已启用${NC} (标点符号输出)"
 echo -e "  - 情感识别: ${GREEN}已启用${NC} (自动标注情绪)"
 echo -e "  - 事件检测: ${GREEN}已启用${NC} (笑声/掌声/BGM等)"
 echo -e "  - 多语言支持: ${GREEN}50+语言${NC} (中英日韩粤等)"
-echo -e "  - 预计内存: ${GREEN}~600-800MB${NC} (比FunASR更低)"
+echo -e "  - 预计内存: ${GREEN}~1300MB${NC} (比FunASR更低)"
 echo ""
 
 # 检查 Python 版本

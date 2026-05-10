@@ -130,6 +130,7 @@ model_asr = AutoModel(
     disable_pbar=True,
     disable_log=True,
     disable_update=True,  # 禁用版本检查，加快启动
+    punc_model="iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch",  # 启用标点模型
 )
 
 # 在线流式模型（SenseVoiceSmall 不支持真正的流式，使用相同模型）
@@ -163,8 +164,11 @@ async def run_blocking(fn, *a, sem=None, **kw):
 
 
 def _generate_sync(model, audio_or_text, status_dict):
-    """同步调用模型生成"""
-    return model.generate(input=audio_or_text, **status_dict)
+    """同步调用模型生成（启用标点）"""
+    # 启用标点符号输出
+    status_dict_with_punc = status_dict.copy()
+    status_dict_with_punc["use_itn"] = True  # 启用逆文本标准化（包含标点）
+    return model.generate(input=audio_or_text, **status_dict_with_punc)
 
 
 async def ws_reset(websocket):
