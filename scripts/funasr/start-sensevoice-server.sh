@@ -23,10 +23,10 @@ SENSEVOICE_MODEL_DIR="${1:-$PROJECT_ROOT/models/stt/SenseVoiceSmall}"
 SENSEVOICE_PORT="${2:-10095}"
 HOST_IP="${3:-0.0.0.0}"
 # CPU 核心数：SenseVoiceSmall 更轻量，可适当提高并发
-# - 单用户/测试环境: 1-2
-# - 小团队 (3-5人): 2-4
-# - 中等并发 (10+人): 4-8
-PYTHON_CORES="${4:-2}"  # 默认 2 核，SenseVoiceSmall 更高效
+# - 单用户/测试环境: 1
+# - 小团队 (3-5人): 2
+# - 中等并发 (10+人): 4
+PYTHON_CORES="${4:-1}"  # 默认 1 核，降低资源消耗
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  SenseVoiceSmall WebSocket 服务启动脚本${NC}"
@@ -35,7 +35,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 echo -e "${YELLOW}资源配置说明:${NC}"
 echo -e "  - CPU核心: ${GREEN}$PYTHON_CORES 核${NC}"
-echo -e "  - 工作线程: ${GREEN}2${NC} (SenseVoiceSmall 更快)"
+echo -e "  - 工作线程: ${GREEN}1${NC} (低资源模式)"
 echo -e "  - VAD模型: ${RED}已禁用${NC} (Java端处理)"
 echo -e "  - 在线ASR: ${YELLOW}批量模式${NC} (说完后统一识别)"
 echo -e "  - 离线ASR: ${GREEN}极速识别${NC} (10秒音频仅需70ms)"
@@ -196,10 +196,10 @@ python3 -u "$SERVER_SCRIPT" \
     --device cpu \
     --ngpu 0 \
     --ncpu "$PYTHON_CORES" \
-    --worker_threads 2 \
+    --worker_threads 1 \
     --concurrent_vad 0 \
-    --concurrent_asr_online 2 \
-    --concurrent_asr_offline 2 \
+    --concurrent_asr_online 1 \
+    --concurrent_asr_offline 1 \
     --concurrent_punc 0 \
     --concurrent_sv 0 \
     --certfile "" \

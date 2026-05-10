@@ -15,8 +15,14 @@ import argparse
 import ssl
 import os
 import re
+import logging
 from concurrent.futures import ThreadPoolExecutor
 
+# 配置日志级别为 ERROR
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger(__name__)
+
+# 只在启动时打印必要信息
 print("model loading")
 from funasr import AutoModel  # noqa
 
@@ -56,12 +62,12 @@ parser.add_argument(
 parser.add_argument(
     "--worker_threads",
     type=int,
-    default=2,
+    default=1,  # 降低默认值，减少资源消耗
     help="ThreadPoolExecutor max_workers",
 )
 parser.add_argument("--concurrent_vad", type=int, default=0, help="Max concurrent VAD calls (disabled)")
-parser.add_argument("--concurrent_asr_online", type=int, default=2, help="Max concurrent streaming ASR calls")
-parser.add_argument("--concurrent_asr_offline", type=int, default=2, help="Max concurrent offline ASR calls")
+parser.add_argument("--concurrent_asr_online", type=int, default=1, help="Max concurrent streaming ASR calls")
+parser.add_argument("--concurrent_asr_offline", type=int, default=1, help="Max concurrent offline ASR calls")
 parser.add_argument("--concurrent_punc", type=int, default=0, help="Max concurrent punctuation calls (disabled)")
 parser.add_argument("--concurrent_sv", type=int, default=0, help="Max concurrent speaker verification calls (disabled)")
 
@@ -114,10 +120,7 @@ def clean_sensevoice_text(text: str) -> str:
     return text.strip()
 
 
-print(f"Loading SenseVoiceSmall model: {args.asr_model}")
-
-# ====== 加载 SenseVoiceSmall 模型 ======
-# SenseVoiceSmall 同时支持在线和离线模式，使用同一个模型实例
+# 静默加载模型（禁用更新检查以加快启动速度）
 model_asr = AutoModel(
     model=args.asr_model,
     model_revision=args.asr_model_revision,
@@ -126,12 +129,13 @@ model_asr = AutoModel(
     device=args.device,
     disable_pbar=True,
     disable_log=True,
+    disable_update=True,  # 禁用版本检查，加快启动
 )
 
 # 在线流式模型（SenseVoiceSmall 不支持真正的流式，使用相同模型）
 model_asr_streaming = model_asr
 
-print("SenseVoiceSmall model loaded! (supports multi-language, emotion recognition, event detection)")
+# 模型加载完成
 
 
 # ====== 线程池 + 并发阈值 ======
@@ -165,8 +169,6 @@ def _generate_sync(model, audio_or_text, status_dict):
 
 async def ws_reset(websocket):
     """重置 WebSocket 连接状态"""
-    print("ws reset now, total num is ", len(websocket_users))
-
     websocket.status_dict_asr_online["cache"] = {}
     websocket.status_dict_asr_online["is_final"] = True
     websocket.status_dict_vad["cache"] = {}
@@ -213,45 +215,31 @@ async def ws_serve(websocket, path=None):
     websocket.audio_fs = 16000
     websocket.offline_seg_idx = 0
 
-    print("new user connected (SenseVoiceSmall)", flush=True)
-
     try:
         async for message in websocket:
-            # 调试：打印收到的消息类型
-            msg_type = "text" if isinstance(message, str) else f"binary({len(message)} bytes)"
-            print(f"[DEBUG] Received message type: {msg_type}")
-                
-            # ========== 1) 先处理“文本配置消息” ==========
+            # ========== 1) 先处理"文本配置消息" ==========
             if isinstance(message, str):
                 try:
                     messagejson = json.loads(message)
                 except Exception as e:
-                    print("bad json message:", e, message[:200])
+                    logger.error(f"bad json message: {e}")
                     continue
 
-                print("=============messagejson============", messagejson)
-
                 if "is_speaking" in messagejson:
-                    old_state = websocket.is_speaking
                     websocket.is_speaking = bool(messagejson["is_speaking"])
                     websocket.status_dict_asr_online["is_final"] = (not websocket.is_speaking)
-                    print(f"[DEBUG] is_speaking changed: {old_state} -> {websocket.is_speaking}")
                     
                     # 如果从 True 变为 False，立即触发识别
-                    if old_state and not websocket.is_speaking:
-                        print(f"[DEBUG] Triggering ASR due to is_speaking=False, frames_asr count={len(frames_asr)}")
-                        if websocket.mode in ("2pass", "offline") and len(frames_asr) > 0:
+                    if not websocket.is_speaking and len(frames_asr) > 0:
+                        if websocket.mode in ("2pass", "offline"):
                             audio_in = b"".join(frames_asr)
                             duration_ms_check = _pcm_duration_ms(audio_in, fs=websocket.audio_fs, ch=1, sampwidth=2)
-                            print(f"[DEBUG] Triggering ASR: total_bytes={len(audio_in)}, duration={duration_ms_check}ms")
                             
                             if duration_ms_check >= 100:
                                 try:
                                     await async_asr(websocket, audio_in)
                                 except Exception as e:
-                                    print("error in asr offline:", e)
-                            else:
-                                print(f"[SKIP] Audio too short: {duration_ms_check}ms")
+                                    logger.error(f"error in asr offline: {e}")
                         
                         # 重置状态
                         frames_asr = []
@@ -262,7 +250,7 @@ async def ws_serve(websocket, path=None):
                         frames = []
                         websocket.status_dict_vad["cache"] = {}
                         speech_end_i = -1
-                        continue  # 跳过后续处理
+                        continue
 
                 if "chunk_interval" in messagejson:
                     websocket.chunk_interval = _safe_int(
@@ -292,7 +280,6 @@ async def ws_serve(websocket, path=None):
                     hotword_data = messagejson["hotwords"]
                     websocket.status_dict_asr["hotword"] = hotword_data
                     websocket.status_dict_asr_online["hotword"] = hotword_data
-                    print(f"热词已更新: {hotword_data}")
 
                 if "mode" in messagejson:
                     websocket.mode = messagejson["mode"] or websocket.mode
@@ -302,9 +289,9 @@ async def ws_serve(websocket, path=None):
 
                 continue
 
-            # ========== 2) 处理“二进制音频消息” ==========
+            # ========== 2) 处理"二进制音频消息" ==========
             if "chunk_size" not in websocket.status_dict_asr_online:
-                print("[WARN] chunk_size not set yet, skip audio frame (send config first).")
+                logger.warning("chunk_size not set yet, skip audio frame")
                 continue
             
             try:
@@ -312,16 +299,12 @@ async def ws_serve(websocket, path=None):
                     websocket.status_dict_asr_online["chunk_size"][1] * 60 / websocket.chunk_interval
                 )
             except Exception as e:
-                print("[WARN] set vad chunk_size failed:", e)
+                logger.error(f"set vad chunk_size failed: {e}")
                 continue
             
             pcm = message
             frames.append(pcm)
-                        
-            # 调试：打印接收到的音频帧信息
-            if len(frames) % 10 == 0:  # 每 10 帧打印一次
-                print(f"[DEBUG] Received {len(frames)} frames, total_bytes={sum(len(f) for f in frames)}")
-            
+
             duration_ms = _pcm_duration_ms(pcm, fs=websocket.audio_fs, ch=1, sampwidth=2)
             websocket.vad_pre_idx += duration_ms
 
@@ -334,15 +317,12 @@ async def ws_serve(websocket, path=None):
                     audio_in = b"".join(frames_asr_online)
                     try:
                         await async_asr_online(websocket, audio_in)
-                    except Exception:
-                        print(f"error in asr streaming, {websocket.status_dict_asr_online}")
+                    except Exception as e:
+                        logger.error(f"error in asr streaming: {e}")
                 frames_asr_online = []
 
-            if speech_start:
-                frames_asr.append(pcm)
-            else:
-                # Java端已处理VAD，直接收集所有音频数据
-                frames_asr.append(pcm)
+            # Java端已处理VAD，直接收集所有音频数据到 frames_asr
+            frames_asr.append(pcm)
 
             # vad online (Java端已处理，跳过)
             speech_start_i, speech_end_i = -1, -1
@@ -362,13 +342,10 @@ async def ws_serve(websocket, path=None):
                 if websocket.mode in ("2pass", "offline"):
                     audio_in = b"".join(frames_asr)
                     
-                    # 调试日志：打印音频信息
-                    duration_ms_check = _pcm_duration_ms(audio_in, fs=websocket.audio_fs, ch=1, sampwidth=2)
-                    print(f"[DEBUG] Triggering ASR: frames_asr count={len(frames_asr)}, total_bytes={len(audio_in)}, duration={duration_ms_check}ms, is_speaking={websocket.is_speaking}")
-                    
                     # SenseVoiceSmall 需要至少 0.1 秒音频才识别（降低阈值避免误跳过）
+                    duration_ms_check = _pcm_duration_ms(audio_in, fs=websocket.audio_fs, ch=1, sampwidth=2)
                     if duration_ms_check < 100:
-                        print(f"[SKIP] Audio too short: {duration_ms_check}ms")
+                        logger.warning(f"Audio too short: {duration_ms_check}ms, skipped")
                         frames_asr = []
                         speech_start = False
                         frames_asr_online = []
@@ -386,7 +363,7 @@ async def ws_serve(websocket, path=None):
                     try:
                         await async_asr(websocket, audio_in)
                     except Exception as e:
-                        print("error in asr offline:", e)
+                        logger.error(f"error in asr offline: {e}")
 
                 frames_asr = []
                 speech_start = False
@@ -402,14 +379,13 @@ async def ws_serve(websocket, path=None):
                     frames = frames[-20:]
 
     except websockets.ConnectionClosed:
-        print("ConnectionClosed...", websocket_users, flush=True)
         await ws_reset(websocket)
         if websocket in websocket_users:
             websocket_users.remove(websocket)
     except websockets.InvalidState:
-        print("InvalidState...")
+        logger.error("InvalidState error")
     except Exception as e:
-        print("Exception:", e)
+        logger.error(f"Exception in ws_serve: {e}", exc_info=True)
         try:
             await ws_reset(websocket)
         except Exception:
@@ -442,9 +418,6 @@ async def async_asr(websocket, audio_in: bytes):
     )
     rec_result = rec_result_list[0]
 
-    print("offline_asr, raw:", rec_result)
-    print("offline_asr, keys:", rec_result.keys())
-
     text = rec_result.get("text", "")
     
     # 2) 清洗 SenseVoice 富文本标签
@@ -455,7 +428,6 @@ async def async_asr(websocket, audio_in: bytes):
 
     # 3) 构造最终 message（SenseVoiceSmall 不带声纹识别）
     if len(text) > 0:
-        print("======offline final text:", text)
         message = {
             "mode": mode,
             "text": text,
@@ -470,8 +442,7 @@ async def async_asr(websocket, audio_in: bytes):
         try:
             await websocket.send(json.dumps(message, ensure_ascii=False))
         except Exception as e:
-            print("send json failed:", e)
-            print("message types:", {k: type(v) for k, v in message.items()})
+            logger.error(f"send json failed: {e}")
     else:
         message = {
             "mode": mode,
@@ -500,10 +471,6 @@ async def async_asr_online(websocket, audio_in: bytes):
         sem=SEM_ASR_ONLINE,
     )
     rec_result = rec_out[0]
-    
-    # 只在有文本时打印日志，减少噪音
-    if rec_result.get("text"):
-        print("online, ", rec_result)
 
     # 2pass：online 只要 partial，不发 final（final 交给 offline）
     if websocket.mode == "2pass" and websocket.status_dict_asr_online.get("is_final", False):
