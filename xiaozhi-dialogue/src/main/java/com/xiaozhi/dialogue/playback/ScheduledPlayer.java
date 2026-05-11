@@ -278,6 +278,14 @@ public class ScheduledPlayer extends Player {
         // 发送文本和表情（如果有）
         String text = speech.getText();
         if (StringUtils.hasText(text)) {
+            // 排查中文缺失问题：记录发送前的文本详情
+            log.info("【文本发送前】SessionId: {}, 文本长度: {}, 文本内容: [{}], 字节数: {}, char数组: {}",
+                session.getSessionId(),
+                text.length(),
+                text,
+                text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
+                java.util.Arrays.toString(text.toCharArray()));
+
             String mood = speech.getMood();
             sendEmotion(StringUtils.hasText(mood) ? mood : EmojiUtils.getRandomEmotion());
             sendSentenceStart(text);

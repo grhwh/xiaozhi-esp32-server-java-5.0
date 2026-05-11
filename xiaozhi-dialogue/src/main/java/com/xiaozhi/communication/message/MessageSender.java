@@ -35,6 +35,13 @@ public class MessageSender {
         messageJson.put("state", state);
         if (text != null) {
             messageJson.put("text", text);
+            // 排查中文缺失问题：记录JSON构建后的文本详情
+            log.info("【JSON构建后】SessionId: {}, state: {}, 文本长度: {}, 文本内容: [{}], 字节数: {}", 
+                session.getSessionId(), 
+                state,
+                text.length(), 
+                text,
+                text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
         }
 
         String jsonMessage = messageJson.toString();
