@@ -75,9 +75,10 @@ start_service() {
   _info "启动 $name (port $port)..."
 
   nohup java \
+    -Duser.dir="$ROOT_DIR" \
     -Djava.library.path="$ROOT_DIR/lib" \
     -jar "$jar" \
-    > /dev/null 2>&1 &
+    > "$LOGS_DIR/$name.log" 2>&1 &
 
   echo $! > "$(pid_file "$name")"
   _ok "$name 已启动  pid=$!  日志: logs/$name.log"
