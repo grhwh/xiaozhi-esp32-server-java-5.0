@@ -38,6 +38,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.xiaozhi.task",
         // xiaozhi-ai
         "com.xiaozhi.ai",
+        "com.xiaozhi.knowledge",
         // xiaozhi-dialogue
         "com.xiaozhi.dialogue",
     },

@@ -64,16 +64,18 @@ public class OpusRecorder {
     }
 
     public void onSendOpusFrame(byte[] opusFrame) {
+        // AEC 回声消除：实时处理，不受音频存储禁用影响
         if (aecService != null && aecService.isEnabled()) {
             aecService.feedReference(session.getSessionId(), opusFrame);
         }
 
-        if (opusFile == null && assistantMessageCreatedAt != null) {
-            openOpusFile();
-        }
-        if (opusFile != null) {
-            opusFile.writeAudioData(new OpusAudioData(opusFrame));
-        }
+        // 音频存储已禁用，不再写入文件grh
+        // if (opusFile == null && assistantMessageCreatedAt != null) {
+        //     openOpusFile();
+        // }
+        // if (opusFile != null) {
+        //     opusFile.writeAudioData(new OpusAudioData(opusFrame));
+        // }
     }
 
     public void onSendStop() {

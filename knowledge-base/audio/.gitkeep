@@ -1,0 +1,3 @@
+# 此目录用于存放知识库对应的音频文件
+# 音频文件命名需与 knowledge-base/text/ 下的文本文件名对应
+# 例如: intro.txt 对应 intro.mp3

@@ -10,6 +10,7 @@ import com.xiaozhi.dialogue.llm.factory.PersonaFactory;
 import com.xiaozhi.ai.llm.memory.MessageTimeMetadata;
 import com.xiaozhi.ai.llm.service.IntentService;
 import com.xiaozhi.ai.stt.SttResult;
+import com.xiaozhi.knowledge.KnowledgeSearchService;
 import com.xiaozhi.common.model.bo.MessageMetadataBO;
 import org.springframework.ai.chat.messages.UserMessage;
 import com.xiaozhi.dialogue.audio.VadService.VadStatus;
@@ -63,6 +64,9 @@ public class DialogueService{
 
     @Resource
     private IntentService intentService;
+
+    @Resource
+    private KnowledgeSearchService knowledgeSearchService;
 
     @Resource
     private ApplicationEventPublisher eventPublisher;
@@ -189,11 +193,11 @@ public class DialogueService{
                 eventPublisher.publishEvent(new SpeechRecognizedEvent(this, sessionId, sttResult.text(),
                         sttResult.hasEmotion() ? sttResult.emotion() : null));
 
-                // 音频保存
-                Instant userInstant = Instant.now();
-                Path userAudioPath = session.getAudioPath(MessageBO.SENDER_USER, userInstant);
-                session.setUserAudioPath(userAudioPath);
-                saveUserAudio(session, userAudioPath);
+                // 音频保存已禁用grh
+                // Instant userInstant = Instant.now();
+                // Path userAudioPath = session.getAudioPath(MessageBO.SENDER_USER, userInstant);
+                // session.setUserAudioPath(userAudioPath);
+                // saveUserAudio(session, userAudioPath);
 
                 handleText(session, sttResult);
 
@@ -240,6 +244,13 @@ public class DialogueService{
             // 意图检测
             if (intentService.detect(text) == IntentService.Intent.EXIT) {
                 sendGoodbyeMessage(session);
+                return;
+            }
+
+            // 知识库检索
+            Optional<String> audioPath = knowledgeSearchService.search(text);
+            if (audioPath.isPresent()) {
+                playKnowledgeAudio(session, audioPath.get());
                 return;
             }
 
@@ -365,6 +376,28 @@ public class DialogueService{
             session.setUserAudioPath(Path.of(storedPath));
         } catch (Exception e) {
             log.warn("上传用户音频失败，保留本地路径: {}", path, e);
+        }
+    }
+
+    /**
+     * 播放知识库音频
+     * 
+     * @param session 当前会话
+     * @param audioPath 音频文件路径
+     */
+    private void playKnowledgeAudio(ChatSession session, String audioPath) {
+        Player player = session.getPlayer();
+        if (player == null) {
+            log.warn("Player未初始化，无法播放知识库音频");
+            return;
+        }
+        
+        try {
+            // 直接播放音频文件
+            player.playAudioFile(audioPath);
+            log.info("播放知识库音频: {}", audioPath);
+        } catch (Exception e) {
+            log.error("播放知识库音频失败: {}", audioPath, e);
         }
     }
 

@@ -52,6 +52,14 @@ public class FileSynthesizer extends Synthesizer {
         llmDisposable = new SentenceHelper().convert(stringFlux).subscribe(result -> {
             String text = result.text();
             String mood = result.mood();
+            
+            // 排查中文缺失问题：记录TTS合成前的文本
+            log.info("【FileSynthesizer接收分句】SessionId: {}, 文本长度: {}, 文本内容: [{}], 字节数: {}", 
+                chatSession.getSessionId(), 
+                text.length(), 
+                text,
+                text.getBytes(java.nio.charset.StandardCharsets.UTF_8).length);
+            
             Flux<Speech> lazyTtsFlux = Flux.create(sink -> {
                 try {
                     Path audioPath = ttsService.textToSpeech(text);

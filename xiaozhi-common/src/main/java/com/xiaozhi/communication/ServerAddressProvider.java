@@ -40,10 +40,11 @@ public class ServerAddressProvider {
     private void initializeAddresses() {
         if (domain != null && !domain.isEmpty()) {
             udpAddress = "udp." + domain;
-            websocketAddress = "wss://ws." + domain + WS_PATH;
-            mcpAddress = "wss://mcp." + domain + "/ws/mcp/";
-            otaAddress = "https://" + domain + "/api/device/ota";
-            serverAddress = "https://" + domain;
+            websocketAddress = "ws://" + domain + ":" + dialoguePort + WS_PATH;
+            mcpAddress = "ws://" + domain + dialoguePort + "/ws/mcp/";
+            // 本地开发环境使用 HTTP，生产环境可使用 HTTPS todo grh
+            otaAddress = "http://" + domain + ":" + serverPort + "/api/device/ota";
+            serverAddress = "http://" + domain + ":" + serverPort;
         } else {
             String serverIp = cmsUtils.getServerIp();
             udpAddress = serverIp;

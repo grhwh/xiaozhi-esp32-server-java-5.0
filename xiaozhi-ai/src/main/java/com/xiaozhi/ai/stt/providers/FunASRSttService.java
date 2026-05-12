@@ -117,6 +117,11 @@ public class FunASRSttService implements SttService {
                             offlineResult.append(text);
                         }
                         log.debug("FunASR 离线修正片段: {}", text);
+                        
+                        // ✅ 收到最终结果后立即释放锁，不等连接关闭
+                        finalResult.set(offlineResult.toString());
+                        recognitionLatch.countDown();
+                        log.info("✅ FunASR识别完成: {}", offlineResult.toString());
                     }
                 } catch (Exception e) {
                     log.error("解析FunASR响应失败", e);

@@ -84,7 +84,8 @@ public class DialogueTurnConverter {
         switch (message.getMessageType()) {
             case USER:
                 if (userSpeechPath != null) {
-                    messageBO.setAudioPath(userSpeechPath.toString());
+                    // 音频存储已禁用grh
+                    // messageBO.setAudioPath(userSpeechPath.toString());
                 }
                 messageBO.setCreateTime(LocalDateTime.ofInstant(turn.getUserMessageCreatedAt(), ZoneId.systemDefault()));
                 // 从 UserMessage.metadata 抽取结构化元数据（speaker/emotion 等）写入 MessageBO.metadata

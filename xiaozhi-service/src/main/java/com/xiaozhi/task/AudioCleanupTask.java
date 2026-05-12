@@ -16,13 +16,17 @@ import java.util.stream.Stream;
 /**
  * 音频文件定时清理任务
  *
+ * 已禁用：音频存储功能已关闭，无需清理音频文件
+ * 如需恢复，取消 @Scheduled 注解的注释即可
+ *
  * 凌晨1点：清理超过 retentionDays 天的对话录音目录
  */
 @Slf4j
 @Component
 public class AudioCleanupTask {
 
-    @Scheduled(cron = "0 0 1 * * ?")
+    // 音频存储已禁用，定时任务已停用
+    // @Scheduled(cron = "0 0 1 * * ?")
     public void cleanupExpiredAudio() {
         Path audioDir = Path.of(AudioUtils.AUDIO_PATH);
         if (!Files.exists(audioDir)) {
